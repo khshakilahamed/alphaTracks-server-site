@@ -4,6 +4,7 @@ const { MongoClient } = require('mongodb');
 const cors = require('cors');
 const ObjectId = require('mongodb').ObjectId;
 require('dotenv').config();
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -31,6 +32,7 @@ async function run() {
         const ordersCollection = database.collection('orders');
         const usersCollection = database.collection('users');
         const reviewsCollection = database.collection('reviews');
+        const paymentsCollection = database.collection('payments');
 
         // get API
         app.get('/bikes', async (req, res) => {
@@ -55,7 +57,14 @@ async function run() {
             const cursor = ordersCollection.find(query);
             const orders = await cursor.toArray();
             res.send(orders)
-        })
+        });
+
+        app.get('/order/:orderId', async (req, res) => {
+            const id = req.params.orderId;
+            const query = { _id: ObjectId(id) };
+            const order = await ordersCollection.findOne(query);
+            res.send(order);
+        });
 
         app.get('/brandItems/:brandName', async (req, res) => {
             const brandName = (req.params.brandName);
@@ -117,9 +126,42 @@ async function run() {
         app.post('/reviews', async (req, res) => {
             const newReview = (req.body);
             const result = await reviewsCollection.insertOne(newReview);
-            console.log(result);
             res.json(result);
-        })
+        });
+
+        app.post('/create-payment-intent', async (req, res) => {
+            const {order} = req.body;
+
+            const id = (Math.random() * 0xfffff * 100000000000).toString(16);
+            const id2 = (Math.random() * 0xfffff * 100000000000).toString(16);
+
+            const paymentId = "pi_" + id + "secret" + id2;
+
+            res.send({ intent:"succeeded", paymentId });
+        });
+
+        app.post('/payments', async (req, res) => {
+            const paymentInfo = req.body;
+            paymentInfo.payment = true;
+            const result = await paymentsCollection.insertOne(paymentInfo);
+            const orderId = paymentInfo.orderId;
+
+            const filter = {_id: ObjectId(orderId)};
+            const updatedDoc = {
+                $set: {
+                    payment: true,
+                    transactionId: paymentInfo.transactionId
+                }
+            }
+
+            // console.log(paymentInfo)
+            const updatedResult = await ordersCollection.updateOne(filter, updatedDoc);
+
+            res.send(result);
+        });
+
+
+
 
         // update API
         app.put('/bikes/:id', async (req, res) => {
@@ -197,7 +239,7 @@ async function run() {
             const query = { _id: ObjectId(id) };
             const result = await ordersCollection.deleteOne(query);
             res.json(result);
-        })
+        });
 
     }
     finally {
